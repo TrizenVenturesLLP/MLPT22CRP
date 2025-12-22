@@ -2,3 +2,7 @@ geopandas
 kagglehub
 streamlit
 plotly
+joblib
+numpy
+matplotlib
+scikit-learn

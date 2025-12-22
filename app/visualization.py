@@ -8,13 +8,13 @@ import joblib
 from streamlit_option_menu import option_menu
 
 st.set_page_config(
-    page_title="Fast India Crime Map", 
-    layout="wide", 
-    page_icon="../stock/logo.png"
+    page_title="Fast India Crime Map", layout="wide", page_icon="../stock/logo.png"
 )
 
 project_root = Path(os.getcwd()).resolve().parent
 
+
+# Load saved Models & Files
 @st.cache_resource
 def load_models_data():
     model_path = project_root / "models"
@@ -25,8 +25,9 @@ def load_models_data():
     csv_loc = project_root / "data" / "processed" / "crime_data_processed.csv"
     df = pd.read_csv(csv_loc)
 
+    # Ensuring Field is numeric
     df["Crime Count"] = pd.to_numeric(df["Crime Count"], errors="coerce").fillna(0)
-    
+
     history_df = df[df["Year"] <= 2023].copy()
     history_df = history_df.sort_values(["State", "Crime Description", "Year", "Month"])
 
@@ -40,6 +41,7 @@ def load_models_data():
     all_states_df = pd.DataFrame({"State": all_states})
     return svr, state_enc, crime_enc, history_df, df, india_states, all_states_df
 
+
 # ============================
 try:
     svr, state_enc, crime_enc, history_df_base, df, india_states, all_states_df = (
@@ -49,14 +51,17 @@ except:
     st.error("Models not found. Make sure you ran the training script!")
     st.stop()
 # ============================
+# Ensure cache with data
 if "forecast_cache" not in st.session_state:
     st.session_state.forecast_cache = history_df_base.copy()
     st.session_state.last_generated_year = 2023
 # ============================
 
-def show_existing_page():
+
+def visualization():
     st.title("India Crime Data Visualization")
 
+    # Define the input fields
     with st.form("filters_form"):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -72,6 +77,8 @@ def show_existing_page():
         submitted = st.form_submit_button("Update Map")
 
     df["Crime Count"] = pd.to_numeric(df["Crime Count"], errors="coerce").fillna(0)
+
+    # OnSubmit Filter data from Dataset
     if submitted:
         df_filtered = df[df["Year"] == year_filter]
 
@@ -113,18 +120,26 @@ def show_existing_page():
     else:
         st.info("Select filters and click **Update Map** to load visualization.")
 
+
 # ============================
+#   Prediction / Forecasting Generator
 def ensure_forecast_exists(target_year):
+    """
+    Since SVR treats time series as a regression problem, it requires context from the recent past
+    to understand the current trend. Lags provide 'short-term memory', allowing 
+    the model to predict the next value based on immediate history rather than just the general monthly average.
+    """
     current_max = st.session_state.last_generated_year
     if target_year <= current_max:
         return
     years_to_gen = range(current_max + 1, target_year + 1)
-    progress_text = "Forecasting future timelines... Please wait."
+    progress_text = "Forecasting timelines... Please wait."
     my_bar = st.progress(0, text=progress_text)
 
     cache = st.session_state.forecast_cache.copy()
     unique_combos = history_df_base[["State", "Crime Description"]].drop_duplicates()
 
+    # Generate a year more than the selected, for faster access of data if needed.
     for year in years_to_gen:
         for month in range(1, 13):
             this_month_input = unique_combos.copy()
@@ -133,39 +148,53 @@ def ensure_forecast_exists(target_year):
             this_month_input["Crime Count"] = 0
 
             temp_df = pd.concat([cache, this_month_input], ignore_index=True)
-            
-            # Fix: Force numeric type to prevent DataError in rolling mean
-            temp_df["Crime Count"] = pd.to_numeric(temp_df["Crime Count"], errors='coerce').fillna(0)
-            
+
+            # Force numeric type to prevent DataError in rolling mean
+            temp_df["Crime Count"] = pd.to_numeric(
+                temp_df["Crime Count"], errors="coerce"
+            ).fillna(0)
+
             temp_df = temp_df.sort_values(
                 ["State", "Crime Description", "Year", "Month"]
             )
-            
+
             grouper = temp_df.groupby(["State", "Crime Description"])["Crime Count"]
+
+
             temp_df["Lag_1"] = grouper.shift(1)
             temp_df["Lag_3"] = grouper.shift(3)
             temp_df["Rolling_Mean_3"] = grouper.transform(
                 lambda x: x.shift(1).rolling(3).mean()
             )
-            
+
             X_pred = temp_df[
                 (temp_df["Year"] == year) & (temp_df["Month"] == month)
             ].copy()
-            
+
             features = [
-                "State", "Year", "Month", "Crime Description", 
-                "Lag_1", "Lag_3", "Rolling_Mean_3"
+                "State",
+                "Year",
+                "Month",
+                "Crime Description",
+                "Lag_1",
+                "Lag_3",
+                "Rolling_Mean_3",
             ]
             X_pred[features] = X_pred[features].fillna(0)
-            
+
             try:
 
                 preds = svr.predict(X_pred[features])
+                preds = [max(0, int(round(p))) for p in preds]
                 X_pred["Crime Count"] = preds
-
                 cols_to_keep = [
-                    "State", "Crime Description", "Year", "Month", "Crime Count"
+                    "State",
+                    "Crime Description",
+                    "Year",
+                    "Month",
+                    "Crime Count",
                 ]
+                # Storing the data to cache.
                 cache = pd.concat([cache, X_pred[cols_to_keep]], ignore_index=True)
 
             except Exception as e:
@@ -175,13 +204,17 @@ def ensure_forecast_exists(target_year):
     my_bar.empty()
     st.session_state.forecast_cache = cache
     st.session_state.last_generated_year = target_year
-    st.success(f"Forecast for {target_year - 1} generated successfully")
+    # st.success(f"Forecast for {target_year - 1}  generated successfully")
+    st.success(f"Forecast generated successfully")
+
 
 # ==================================
 
+
+# Get Next 3,6, 12 month prediction from current selection
 def get_long_term_forecast_from_cache(state, start_year, start_month, crime_type):
     end_year = start_year + 1
-    ensure_forecast_exists(end_year) 
+    ensure_forecast_exists(end_year)
 
     cache = st.session_state.forecast_cache
 
@@ -212,6 +245,7 @@ def get_long_term_forecast_from_cache(state, start_year, start_month, crime_type
     return int(q_val), int(h_val), int(y_val)
 
 
+# Pre
 def show_crime_prediction():
     st.title("India Crime Data Forecasting")
 
@@ -235,7 +269,7 @@ def show_crime_prediction():
             selected_month = col_m.selectbox(
                 "Month",
                 range(1, 13),
-                index=0, # Default to January
+                index=0,  # Default to January
                 format_func=lambda x: pd.to_datetime(f"2022-{x}-01").strftime("%B"),
             )
 
@@ -297,10 +331,18 @@ def show_crime_prediction():
 
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
 
+                    csv_data = df_display.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label=" Download Results as CSV",
+                        data=csv_data,
+                        file_name=f"prediction_{selected_state}_{selected_year}_{selected_month}.csv",
+                        mime="text/csv",
+                    )
                     st.divider()
                     st.subheader(f"Long-Term Forecast ({selected_state})")
 
                     with st.spinner("Analyzing future trends..."):
+
                         q_val, h_val, y_val = get_long_term_forecast_from_cache(
                             selected_state,
                             selected_year,
@@ -309,6 +351,7 @@ def show_crime_prediction():
                         )
 
                     c1, c2, c3 = st.columns(3)
+                    # The Future Pred is SUM (Aggretation count) of next 3,6,12 months from current DATE
                     c1.metric("Next 3 Months (Quarter)", f"{q_val} crimes")
                     c2.metric("Next 6 Months (Half-Year)", f"{h_val} crimes")
                     c3.metric("Next 1 Year (Annual)", f"{y_val} crimes")
@@ -368,13 +411,15 @@ def show_crime_prediction():
 
 def main():
 
-    pg = st.navigation([
-        st.Page(show_existing_page, title="Data Visualization", icon="📊"),
-        st.Page(show_crime_prediction, title="Crime Prediction Model", icon="🤖"),
-    ])
-    
-    # Run the selected page
+    pg = st.navigation(
+        [
+            st.Page(visualization, title="Data Visualization"),
+            st.Page(show_crime_prediction, title="Crime Prediction Model"),
+        ]
+    )
+
     pg.run()
+
 
 if __name__ == "__main__":
     main()

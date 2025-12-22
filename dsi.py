@@ -1,51 +1,66 @@
 import os
 import shutil
 import kagglehub
+import geopandas as gpd
 from pathlib import Path
 
-path = kagglehub.dataset_download("sudhanvahg/indian-crimes-dataset")
-print(path)
+project_root = Path(os.getcwd()).resolve()
 
-# Define destination inside your project
-project_root = Path(os.getcwd()).resolve().parent
-project_data_path = project_root  / "crime_forecasting" / "data" / "raw"
+# Destination paths
+raw_data_path = project_root / "data" / "raw"
+json_folder = project_root / "json"
+input_geojson = json_folder / "india_state.geojson"
+output_geojson = json_folder / "cleaned.geojson"
 
-# Make sure folder exists
-os.makedirs(project_data_path, exist_ok=True)
+os.makedirs(raw_data_path, exist_ok=True)
+os.makedirs(json_folder, exist_ok=True)
 
-# Copy dataset contents into project folder
-for item in os.listdir(path):
-    print(item)
-    s = os.path.join(path, item)
-    d = os.path.join(project_data_path, item)
-    if os.path.isdir(s):
-        shutil.copytree(s, d, dirs_exist_ok=True)
-    else:
-        shutil.copy2(s, d)
+print(f"Project Root detected at: {project_root}")
 
-print("Dataset copied to:", project_data_path)
+print("\n--- Starting Dataset Download ---")
+try:
+    # Download latest version
+    path = kagglehub.dataset_download("sudhanvahg/indian-crimes-dataset")
+    print(f"Kaggle download path: {path}")
 
+    # Copy dataset contents into project folder
+    print(f"Copying files to {raw_data_path}...")
+    for item in os.listdir(path):
+        s = os.path.join(path, item)
+        d = os.path.join(raw_data_path, item)
+        if os.path.isdir(s):
+            shutil.copytree(s, d, dirs_exist_ok=True)
+        else:
+            shutil.copy2(s, d)
+    print("Dataset copied successfully.")
 
+except Exception as e:
+    print(f"Error downloading/copying dataset: {e}")
 
-import geopandas as gpd
+print("\n--- Starting GeoJSON Processing ---")
 
-project_root = Path(os.getcwd()).resolve().parent
+if not input_geojson.exists():
+    print(f"Warning: Input GeoJSON not found at {input_geojson}")
+    print("Please ensure 'india_state.geojson' is present in the 'json' folder.")
+    print("Download: https://github.com/geohacker/india/blob/master/state/india_state.geojson")
+else:
+    try:
+        # Load original geojson
+        print("Loading GeoJSON...")
+        gdf = gpd.read_file(input_geojson)
 
-input_path = project_root / "json" / "india_state.geojson"
-output_path = project_root / "json" / "cleaned.geojson"
+        # print(gdf.columns)
 
-# Load original geojson
-gdf = gpd.read_file(input_path)
+        # Clean geometry values
+        print("Cleaning geometries (buffer & simplify)...")
+        gdf["geometry"] = gdf["geometry"].buffer(0)
+        gdf["geometry"] = gdf["geometry"].simplify(tolerance=0.01, preserve_topology=True)
 
-# Inspect column names
-print(gdf.columns)
+        # Save cleaned file
+        gdf.to_file(output_geojson, driver="GeoJSON")
+        print(f"Cleaned file saved to: {output_geojson}")
 
-# Clean geometry values
-gdf["geometry"] = gdf["geometry"].buffer(0)
+    except Exception as e:
+        print(f"Error processing GeoJSON: {e}")
 
-gdf["geometry"] = gdf["geometry"].simplify(tolerance=0.01, preserve_topology=True)
-
-# Save cleaned file
-gdf.to_file(output_path, driver="GeoJSON")
-
-print(" Cleaned file saved with properties intact.")
+print("\n--- DSI Setup Complete ---")
