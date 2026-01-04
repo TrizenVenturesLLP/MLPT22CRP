@@ -9,7 +9,7 @@ project_root = Path(os.getcwd()).resolve()
 # Destination paths
 raw_data_path = project_root / "data" / "raw"
 json_folder = project_root / "json"
-input_geojson = json_folder / "india_state.geojson"
+input_geojson = json_folder / "india.json"
 output_geojson = json_folder / "cleaned.geojson"
 
 os.makedirs(raw_data_path, exist_ok=True)
@@ -41,8 +41,8 @@ print("\n--- Starting GeoJSON Processing ---")
 
 if not input_geojson.exists():
     print(f"Warning: Input GeoJSON not found at {input_geojson}")
-    print("Please ensure 'india_state.geojson' is present in the 'json' folder.")
-    print("Download: https://github.com/geohacker/india/blob/master/state/india_state.geojson")
+    print("Please ensure 'india.json' is present in the 'json' folder.")
+    print("Download: https://github.com/adarshbiradar/maps-geojson/blob/master/india.json")
 else:
     try:
         # Load original geojson

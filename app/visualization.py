@@ -5,7 +5,8 @@ import os
 import plotly.express as px
 from pathlib import Path
 import joblib
-from streamlit_option_menu import option_menu
+import plotly.graph_objects as go
+from dateutil.relativedelta import relativedelta
 
 st.set_page_config(
     page_title="Fast India Crime Map", layout="wide", page_icon="../stock/logo.png"
@@ -36,7 +37,7 @@ def load_models_data():
         india_states = json.load(f)
 
     all_states = [
-        feature["properties"]["NAME_1"] for feature in india_states["features"]
+        feature["properties"]["st_nm"] for feature in india_states["features"]
     ]
     all_states_df = pd.DataFrame({"State": all_states})
     return svr, state_enc, crime_enc, history_df, df, india_states, all_states_df
@@ -65,7 +66,10 @@ def visualization():
     with st.form("filters_form"):
         col1, col2, col3 = st.columns(3)
         with col1:
-            year_filter = st.selectbox("Year", sorted(df["Year"].unique()), index=0)
+            year_filter = st.selectbox(
+                "Year", sorted(df[df["Year"] < 2024]["Year"].unique()), index=0
+            )
+
         with col2:
             months = sorted(df["Month"].unique())
             month_filter = st.selectbox(
@@ -107,7 +111,7 @@ def visualization():
             merged_df,
             geojson=india_states,
             locations="State",
-            featureidkey="properties.NAME_1",
+            featureidkey="properties.st_nm",
             color="Crime Count",
             color_continuous_scale="Reds",
             title=title,
@@ -115,7 +119,7 @@ def visualization():
         fig.update_geos(fitbounds="locations", visible=False)
         fig.update_layout(margin={"r": 0, "t": 40, "l": 0, "b": 0}, height=650)
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         st.success("Map updated ")
     else:
         st.info("Select filters and click **Update Map** to load visualization.")
@@ -126,7 +130,7 @@ def visualization():
 def ensure_forecast_exists(target_year):
     """
     Since SVR treats time series as a regression problem, it requires context from the recent past
-    to understand the current trend. Lags provide 'short-term memory', allowing 
+    to understand the current trend. Lags provide 'short-term memory', allowing
     the model to predict the next value based on immediate history rather than just the general monthly average.
     """
     current_max = st.session_state.last_generated_year
@@ -138,10 +142,15 @@ def ensure_forecast_exists(target_year):
 
     cache = st.session_state.forecast_cache.copy()
     unique_combos = history_df_base[["State", "Crime Description"]].drop_duplicates()
-
+    total_steps = len(years_to_gen) * 12
+    current_step = 0
     # Generate a year more than the selected, for faster access of data if needed.
     for year in years_to_gen:
         for month in range(1, 13):
+            current_step += 1
+            progress = current_step / total_steps
+            my_bar.progress(progress, text=progress_text)
+
             this_month_input = unique_combos.copy()
             this_month_input["Year"] = year
             this_month_input["Month"] = month
@@ -159,7 +168,6 @@ def ensure_forecast_exists(target_year):
             )
 
             grouper = temp_df.groupby(["State", "Crime Description"])["Crime Count"]
-
 
             temp_df["Lag_1"] = grouper.shift(1)
             temp_df["Lag_3"] = grouper.shift(3)
@@ -246,10 +254,22 @@ def get_long_term_forecast_from_cache(state, start_year, start_month, crime_type
 
 
 # Pre
+all_crime_types = list(crime_enc.classes_)
+all_crime_types.insert(0, "All Crimes")
+
+
 def show_crime_prediction():
     st.title("India Crime Data Forecasting")
+    if "selected_state" not in st.session_state:
+        st.session_state.selected_state = state_enc.classes_[0]
 
+    st.markdown(
+        f'<p style="font-size:18px; font-weight:bold;">Selected State: <span style="color:#4B8BBE;">{st.session_state.selected_state}</span></p>',
+        unsafe_allow_html=True,
+    )
     tab1, tab2 = st.tabs(["Prediction Dashboard", "Heatmap Analysis"])
+
+    selected_state = None
 
     # ==== 1: PREDICTION DASHBOARD =====
     with tab1:
@@ -258,9 +278,13 @@ def show_crime_prediction():
         with col1:
             st.subheader("Select Parameters")
 
-            # Default options set via index
             all_states = state_enc.classes_
-            selected_state = st.selectbox("Select State", all_states, index=0)
+            selected_state = st.selectbox(
+                "Select State",
+                all_states,
+                index=all_states.tolist().index(st.session_state.selected_state),
+                key="selected_state",  # Syncs to session state
+            )
 
             col_y, col_m = st.columns(2)
             selected_year = col_y.number_input(
@@ -273,29 +297,27 @@ def show_crime_prediction():
                 format_func=lambda x: pd.to_datetime(f"2022-{x}-01").strftime("%B"),
             )
 
-            all_crime_types = list(crime_enc.classes_)
-            all_crime_types.insert(0, "All Crimes")
             selected_crime = st.selectbox("Crime Type", all_crime_types, index=0)
 
             run_pred = st.button("Generate Prediction", type="primary")
 
         with col2:
             if run_pred:
+                st.session_state.auto_update_map = True
                 if selected_year >= 2026:
                     st.warning(
-                        "**Warning**: Predicting > 2 years ahead of 2023 relies on recursive estimation my have uncertainity.",
+                        "**Warning**: Predicting > 2 years ahead relies on recursive estimation and may have uncertainty.",
                         icon="⚠️",
                     )
 
                 ensure_forecast_exists(selected_year + 1)
-
                 cache = st.session_state.forecast_cache
+
                 mask = (
                     (cache["Year"] == selected_year)
                     & (cache["Month"] == selected_month)
                     & (cache["State"] == selected_state)
                 )
-
                 if selected_crime != "All Crimes":
                     mask &= cache["Crime Description"] == selected_crime
 
@@ -307,7 +329,6 @@ def show_crime_prediction():
                     )
 
                     month_total = df_pred["Crime Count"].sum()
-
                     if not df_pred.empty:
                         top_crime = df_pred.loc[df_pred["Crime Count"].idxmax()][
                             "Crime Description"
@@ -328,33 +349,23 @@ def show_crime_prediction():
                     df_display = df_display[df_display["Count"] > 0].sort_values(
                         by="Count", ascending=False
                     )
+                    st.dataframe(
+                        df_display, width=800, hide_index=True
+                    )  # width="stretch" 
 
-                    st.dataframe(df_display, use_container_width=True, hide_index=True)
-
-                    csv_data = df_display.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label=" Download Results as CSV",
-                        data=csv_data,
-                        file_name=f"prediction_{selected_state}_{selected_year}_{selected_month}.csv",
-                        mime="text/csv",
-                    )
                     st.divider()
                     st.subheader(f"Long-Term Forecast ({selected_state})")
-
                     with st.spinner("Analyzing future trends..."):
-
                         q_val, h_val, y_val = get_long_term_forecast_from_cache(
                             selected_state,
                             selected_year,
                             selected_month,
                             selected_crime,
                         )
-
                     c1, c2, c3 = st.columns(3)
-                    # The Future Pred is SUM (Aggretation count) of next 3,6,12 months from current DATE
-                    c1.metric("Next 3 Months (Quarter)", f"{q_val} crimes")
-                    c2.metric("Next 6 Months (Half-Year)", f"{h_val} crimes")
-                    c3.metric("Next 1 Year (Annual)", f"{y_val} crimes")
+                    c1.metric("Next 3 Months", f"{q_val}")
+                    c2.metric("Next 6 Months", f"{h_val}")
+                    c3.metric("Next 1 Year", f"{y_val}")
 
                 else:
                     st.error("No data found for this selection.")
@@ -369,18 +380,20 @@ def show_crime_prediction():
             h_year = st.number_input("Heatmap Year", 2024, 2030, 2025, key="h_year")
             h_month = st.selectbox("Heatmap Month", range(1, 13), key="h_month")
             h_crime = st.selectbox("Crime Type to Map", all_crime_types, key="h_crime")
-            gen_map = st.button("Update Heatmap")
+
+            if selected_state:
+                st.info(f"Targeting: **{selected_state}** (from Prediction Dashboard)")
+
+            auto = st.session_state.pop("auto_update_map", False)
+            gen_map = st.button("Update Heatmap") or auto
 
         with h_col2:
             if gen_map:
-                if h_year > 2026:
-                    st.warning("High Uncertainty: Long-term forecast active.")
-
-                ensure_forecast_exists(h_year)
-
+                ensure_forecast_exists(h_year + 1)
                 cache = st.session_state.forecast_cache
-                mask = (cache["Year"] == h_year) & (cache["Month"] == h_month)
 
+                # 1. Prepare Base Data
+                mask = (cache["Year"] == h_year) & (cache["Month"] == h_month)
                 if h_crime != "All Crimes":
                     mask &= cache["Crime Description"] == h_crime
 
@@ -388,25 +401,162 @@ def show_crime_prediction():
                     cache[mask].groupby("State", as_index=False)["Crime Count"].sum()
                 )
 
+                current_date = pd.to_datetime(f"{h_year}-{h_month}-01")
+                date_3m = current_date + relativedelta(months=3)
+                date_6m = current_date + relativedelta(months=6)
+                date_1y = current_date + relativedelta(months=12)
+
+                def get_future_sums(end_date, label):
+                    temp_cache = cache.copy()
+                    temp_cache["Date"] = pd.to_datetime(
+                        temp_cache[["Year", "Month"]].assign(DAY=1)
+                    )
+                    f_mask = (temp_cache["Date"] > current_date) & (
+                        temp_cache["Date"] <= end_date
+                    )
+                    if h_crime != "All Crimes":
+                        f_mask &= temp_cache["Crime Description"] == h_crime
+                    return (
+                        temp_cache[f_mask]
+                        .groupby("State", as_index=False)["Crime Count"]
+                        .sum()
+                        .rename(columns={"Crime Count": label})
+                    )
+
                 merged_df = all_states_df.merge(
                     map_data, on="State", how="left"
+                ).fillna(0)
+                merged_df = merged_df.merge(
+                    get_future_sums(date_3m, "Next 3 Months"), on="State", how="left"
+                ).fillna(0)
+                merged_df = merged_df.merge(
+                    get_future_sums(date_6m, "Next 6 Months"), on="State", how="left"
+                ).fillna(0)
+                merged_df = merged_df.merge(
+                    get_future_sums(date_1y, "Next 1 Year"), on="State", how="left"
                 ).fillna(0)
 
                 fig = px.choropleth(
                     merged_df,
                     geojson=india_states,
                     locations="State",
-                    featureidkey="properties.NAME_1",
+                    featureidkey="properties.st_nm",
                     color="Crime Count",
                     color_continuous_scale="RdYlGn_r",
                     title=f"Crime Intensity: {h_crime} ({h_month}/{h_year})",
+                    hover_data=["State", "Crime Count", "Next 3 Months"],
                 )
+                fig.update_traces(marker_opacity=0.5, marker_line_width=0.5)
+
+                if selected_state and selected_state in merged_df["State"].values:
+                    # Get Data
+                    state_row = merged_df[merged_df["State"] == selected_state]
+                    raw_val = state_row["Crime Count"]
+                    crime_count = (
+                        float(raw_val.iloc[0])
+                        if isinstance(raw_val, pd.Series)
+                        else float(raw_val)
+                    )
+
+                    # Get Location
+                    center_lon, center_lat = get_state_centroid_coords(
+                        selected_state, india_states
+                    )
+
+                    if center_lon and center_lat:
+
+                        box_x_offset = 70 if center_lon < 78 else -70
+                        box_y_offset = 0 
+                        box_x_offset = max(min(box_x_offset, 80), -80)
+                        box_y_offset = max(min(box_y_offset, 80), -80)
+
+                        if center_lat > 32:
+                            box_y_offset = 50  #
+                        if center_lat < 10:
+                            box_y_offset = -50  
+                        fig.add_trace(
+                            go.Scattergeo(
+                                lon=[center_lon],
+                                lat=[center_lat],
+                                text=[
+                                    f"<b>{selected_state.upper()}</b><br>Count: {int(crime_count)}"
+                                ],
+                                mode="markers+text",
+                                textposition="top center",
+                                textfont=dict(size=14, color="black"),
+                                marker=dict(
+                                    size=8,
+                                    color="black",
+                                    line=dict(width=2, color="white"),
+                                ),
+                                hoverinfo="skip",
+                                showlegend=False,
+                            )
+                        )
+                        fig.add_annotation(
+                            text='<b><span style="color:red;">Red = High Crime</span><br><span style="color:green;">Green = Low Crime</span></b>',
+                            showarrow=False,
+                            xref="paper",
+                            yref="paper",
+                            x=0.8,
+                            y=0.25,
+                            xanchor="left",
+                            yanchor="bottom",
+                            font=dict(size=12),
+                            bgcolor="white",
+                            bordercolor="black",
+                            borderwidth=1,
+                            borderpad=4,
+                            opacity=0.8,
+                        )
+
+                        # Highlight Trace
+                        fig.add_trace(
+                            go.Choropleth(
+                                geojson=india_states,
+                                locations=[selected_state],
+                                z=[crime_count],
+                                featureidkey="properties.st_nm",
+                                colorscale="RdYlGn_r",
+                                showscale=False,
+                                marker_opacity=0.1,
+                                marker_line_color="black",
+                                marker_line_width=2,
+                                hoverinfo="skip",
+                            )
+                        )
+
                 fig.update_geos(fitbounds="locations", visible=False)
-                fig.update_layout(margin={"r": 0, "t": 40, "l": 0, "b": 0}, height=650)
+                fig.update_layout(height=650, margin={"r": 0, "t": 40, "l": 0, "b": 0})
+
                 st.plotly_chart(fig, use_container_width=True)
 
-                with st.expander("View Raw Data"):
-                    st.dataframe(map_data.sort_values("Crime Count", ascending=False))
+                with st.expander("View Raw Data (Crime Count & Future Prediction)"):
+                    st.dataframe(merged_df.sort_values("Crime Count", ascending=False))
+
+
+def get_state_centroid_coords(state_name, geojson_data):
+    target_feature = None
+    for feature in geojson_data["features"]:
+        if feature["properties"].get("st_nm") == state_name:
+            target_feature = feature
+            break
+    if not target_feature:
+        return None, None
+
+    geometry = target_feature["geometry"]
+    coords_list = []
+    if geometry["type"] == "Polygon":
+        coords_list = geometry["coordinates"][0]
+    elif geometry["type"] == "MultiPolygon":
+        for polygon in geometry["coordinates"]:
+            coords_list.extend(polygon[0])
+
+    if not coords_list:
+        return None, None
+    center_lon = sum(c[0] for c in coords_list) / len(coords_list)
+    center_lat = sum(c[1] for c in coords_list) / len(coords_list)
+    return center_lon, center_lat
 
 
 def main():
