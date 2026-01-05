@@ -116,7 +116,7 @@ def visualization():
             color_continuous_scale="Reds",
             title=title,
         )
-        fig.update_geos(fitbounds="locations", visible=False)
+        fig.update_geos(fitbounds="locations", visible=False, bgcolor="#AEDBFE")
         fig.update_layout(margin={"r": 0, "t": 40, "l": 0, "b": 0}, height=650)
 
         st.plotly_chart(fig, width="stretch")
@@ -446,6 +446,7 @@ def show_crime_prediction():
                     title=f"Crime Intensity: {h_crime} ({h_month}/{h_year})",
                     hover_data=["State", "Crime Count", "Next 3 Months"],
                 )
+
                 fig.update_traces(marker_opacity=0.5, marker_line_width=0.5)
 
                 if selected_state and selected_state in merged_df["State"].values:
@@ -474,6 +475,23 @@ def show_crime_prediction():
                             box_y_offset = 50  #
                         if center_lat < 10:
                             box_y_offset = -50
+                        fig.add_trace(
+                            go.Choropleth(
+                                geojson=india_states,
+                                locations=[
+                                    f["properties"]["st_nm"]
+                                    for f in india_states["features"]
+                                ],
+                                z=[0] * len(india_states["features"]),
+                                featureidkey="properties.st_nm",
+                                colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+                                showscale=False,
+                                marker_line_color="black",
+                                marker_line_width=1,
+                                hoverinfo="skip",
+                            )
+                        )
+
                         fig.add_trace(
                             go.Scattergeo(
                                 lon=[center_lon],
@@ -519,14 +537,14 @@ def show_crime_prediction():
                                 featureidkey="properties.st_nm",
                                 colorscale="RdYlGn_r",
                                 showscale=False,
-                                marker_opacity=0.1,
+                                marker_opacity=0.3,
                                 marker_line_color="black",
-                                marker_line_width=2,
+                                marker_line_width=1.5,
                                 hoverinfo="skip",
                             )
                         )
 
-                fig.update_geos(fitbounds="locations", visible=False)
+                fig.update_geos(fitbounds="locations", visible=False, bgcolor="#AEDBFE")
                 fig.update_layout(height=650, margin={"r": 0, "t": 40, "l": 0, "b": 0})
 
                 st.plotly_chart(fig, use_container_width=True)
