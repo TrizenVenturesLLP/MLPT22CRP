@@ -351,7 +351,7 @@ def show_crime_prediction():
                     )
                     st.dataframe(
                         df_display, width=800, hide_index=True
-                    )  # width="stretch" 
+                    )  # width="stretch"
 
                     st.divider()
                     st.subheader(f"Long-Term Forecast ({selected_state})")
@@ -466,14 +466,14 @@ def show_crime_prediction():
                     if center_lon and center_lat:
 
                         box_x_offset = 70 if center_lon < 78 else -70
-                        box_y_offset = 0 
+                        box_y_offset = 0
                         box_x_offset = max(min(box_x_offset, 80), -80)
                         box_y_offset = max(min(box_y_offset, 80), -80)
 
                         if center_lat > 32:
                             box_y_offset = 50  #
                         if center_lat < 10:
-                            box_y_offset = -50  
+                            box_y_offset = -50
                         fig.add_trace(
                             go.Scattergeo(
                                 lon=[center_lon],
@@ -532,7 +532,62 @@ def show_crime_prediction():
                 st.plotly_chart(fig, use_container_width=True)
 
                 with st.expander("View Raw Data (Crime Count & Future Prediction)"):
-                    st.dataframe(merged_df.sort_values("Crime Count", ascending=False))
+
+                    crime_cols = [
+                        "Crime Count",
+                        "Next 3 Months",
+                        "Next 6 Months",
+                        "Next 1 Year",
+                    ]
+
+                    merged_df = merged_df[(merged_df[crime_cols] != 0).any(axis=1)]
+                    sorted_df = merged_df.sort_values("Crime Count", ascending=False)
+
+                    marked_df = mark_danger_index(sorted_df, "Crime Count")
+
+                    styled_df = highlight_max_row(marked_df, "Crime Count")
+
+                    st.dataframe(styled_df)
+                    st.markdown(
+                        "> ℹ️ **Note:** Rows where all crime-related values are `0` have been excluded. "
+                        "This reflects a **dataset limitation** where no incidents or forecasts are available for those states."
+                    )
+
+
+def highlight_max_row(df, column):
+    max_idx = df[column].idxmax()
+
+    return df.style.format(
+        {
+            "Crime Count": "{:.0f}",
+            "Next 3 Months": "{:.0f}",
+            "Next 6 Months": "{:.0f}",
+            "Next 1 Year": "{:.0f}",
+        }
+    ).apply(
+        lambda row: [
+            (
+                "background-color: #fde2e2; color: #7f1d1d; font-weight: 700;"
+                if row.name == max_idx
+                else ""
+            )
+            for _ in row
+        ],
+        axis=1,
+    )
+
+
+def mark_danger_index(df, column, symbol="🚨"):
+    df = df.copy()
+    max_idx = df[column].idxmax()
+
+    new_index = df.index.astype(str).tolist()
+    new_index[df.index.get_loc(max_idx)] = (
+        f"{symbol} {new_index[df.index.get_loc(max_idx)]}"
+    )
+    df.index = new_index
+
+    return df
 
 
 def get_state_centroid_coords(state_name, geojson_data):
