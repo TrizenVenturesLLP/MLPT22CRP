@@ -400,7 +400,7 @@ def show_crime_prediction():
                 map_data = (
                     cache[mask].groupby("State", as_index=False)["Crime Count"].sum()
                 )
-
+                print(map_data)
                 current_date = pd.to_datetime(f"{h_year}-{h_month}-01")
                 date_3m = current_date + relativedelta(months=3)
                 date_6m = current_date + relativedelta(months=6)
@@ -426,6 +426,8 @@ def show_crime_prediction():
                 merged_df = all_states_df.merge(
                     map_data, on="State", how="left"
                 ).fillna(0)
+                # print(all_states_df)
+                # print(merged_df)
                 merged_df = merged_df.merge(
                     get_future_sums(date_3m, "Next 3 Months"), on="State", how="left"
                 ).fillna(0)
@@ -435,7 +437,7 @@ def show_crime_prediction():
                 merged_df = merged_df.merge(
                     get_future_sums(date_1y, "Next 1 Year"), on="State", how="left"
                 ).fillna(0)
-
+                print(merged_df)
                 fig = px.choropleth(
                     merged_df,
                     geojson=india_states,
