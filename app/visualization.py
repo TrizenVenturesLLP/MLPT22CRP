@@ -1,10 +1,11 @@
-import streamlit as st
-import pandas as pd
-import json
 import os
-import plotly.express as px
-from pathlib import Path
+import json
 import joblib
+import numpy as np
+import pandas as pd
+import streamlit as st
+from pathlib import Path
+import plotly.express as px
 import plotly.graph_objects as go
 from dateutil.relativedelta import relativedelta
 
@@ -174,7 +175,8 @@ def ensure_forecast_exists(target_year):
             temp_df["Rolling_Mean_3"] = grouper.transform(
                 lambda x: x.shift(1).rolling(3).mean()
             )
-
+            temp_df["Month_sin"] = np.sin(2 * np.pi * temp_df["Month"] / 12)
+            temp_df["Month_cos"] = np.cos(2 * np.pi * temp_df["Month"] / 12)
             X_pred = temp_df[
                 (temp_df["Year"] == year) & (temp_df["Month"] == month)
             ].copy()
@@ -182,11 +184,12 @@ def ensure_forecast_exists(target_year):
             features = [
                 "State",
                 "Year",
-                "Month",
                 "Crime Description",
                 "Lag_1",
                 "Lag_3",
                 "Rolling_Mean_3",
+                "Month_sin",
+                "Month_cos",
             ]
             X_pred[features] = X_pred[features].fillna(0)
 
@@ -392,7 +395,7 @@ def show_crime_prediction():
                 ensure_forecast_exists(h_year + 1)
                 cache = st.session_state.forecast_cache
 
-                # 1. Prepare Base Data
+                # Prepare Base Data
                 mask = (cache["Year"] == h_year) & (cache["Month"] == h_month)
                 if h_crime != "All Crimes":
                     mask &= cache["Crime Description"] == h_crime
