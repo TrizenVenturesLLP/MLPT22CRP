@@ -1,0 +1,23 @@
+# Backend ignores
+backend/venv/
+backend/random/
+backend/__pycache__/
+backend/models/
+
+# Frontend ignores
+frontend/node_modules/
+
+# Global Model & Data ignores
+models/
+data/raw/
+data/processed/
+*.pkl
+*.xlsx
+*.csv
+json/india.json
+json/india_state.geojson
+json/cleaned.geojson
+
+# Misc
+.DS_Store
+Thumbs.db

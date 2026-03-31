@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@layer base {
+  :root {
+    --background: 222 47% 11%;
+    --foreground: 214 32% 91%;
+
+    --card: 220 40% 13%;
+    --card-foreground: 214 32% 91%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 214 32% 91%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 192 70% 17%;
+    --secondary-foreground: 214 32% 91%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --risk-high: 0 84% 60%;
+    --risk-medium: 38 92% 50%;
+    --risk-low: 160 84% 39%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.75rem;
+
+    --glass-bg: 0 0% 100% / 0.05;
+    --glass-border: 0 0% 100% / 0.1;
+    --glass-blur: 16px;
+
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(213 94% 68%));
+    --gradient-bg: linear-gradient(180deg, hsl(192 70% 17%), hsl(222 47% 11%));
+    --gradient-hero-glow: radial-gradient(ellipse at center, hsl(217 91% 60% / 0.15), transparent 70%);
+
+    --shadow-glow-blue: 0 0 40px hsl(217 91% 60% / 0.3);
+    --shadow-glow-red: 0 0 20px hsl(0 84% 60% / 0.3);
+    --shadow-glow-amber: 0 0 20px hsl(38 92% 50% / 0.3);
+    --shadow-glow-green: 0 0 20px hsl(160 84% 39% / 0.3);
+
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 214 32% 91%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 214 32% 91%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 217 91% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: hsla(var(--glass-bg));
+    border: 1px solid hsla(var(--glass-border));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border-radius: var(--radius);
+  }
+
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .gradient-bg {
+    background: var(--gradient-bg);
+  }
+
+  .hero-glow {
+    background: var(--gradient-hero-glow);
+  }
+
+  .glow-blue {
+    box-shadow: var(--shadow-glow-blue);
+  }
+
+  .glow-red {
+    box-shadow: var(--shadow-glow-red);
+  }
+
+  .glow-amber {
+    box-shadow: var(--shadow-glow-amber);
+  }
+
+  .glow-green {
+    box-shadow: var(--shadow-glow-green);
+  }
+
+  .risk-border-high {
+    border-top: 3px solid hsl(var(--risk-high));
+  }
+
+  .risk-border-medium {
+    border-top: 3px solid hsl(var(--risk-medium));
+  }
+
+  .risk-border-low {
+    border-top: 3px solid hsl(var(--risk-low));
+  }
+}
