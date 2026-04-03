@@ -1,12 +1,14 @@
 import os
+import shutil
 import joblib
 import pandas as pd
 import numpy as np
-import requests
 from flask import Flask, request, jsonify
 from pathlib import Path
 from sklearn.cluster import KMeans
 from flask_cors import CORS
+from huggingface_hub import hf_hub_download
+from huggingface_hub.utils import HfHubHTTPError
 
 app = Flask(__name__)
 
@@ -37,13 +39,15 @@ models_error = None
 config_loaded = False
 config_error = None
 
-# Hugging Face-hosted trend classifier (file storage only)
-HF_TREND_URL = os.environ.get(
-    "HF_TREND_CLASSIFIER_URL",
-    "https://huggingface.co/Tarun516/trend-classifier/resolve/main/trend_classifier.pkl",
-)
-HF_TOKEN = os.environ.get("HF_TOKEN")
-HF_DOWNLOAD_TIMEOUT = int(os.environ.get("HF_DOWNLOAD_TIMEOUT", "300"))
+# Hugging Face Hub (handles auth, LFS / xet; plain HTTP often returns 401 for large files)
+HF_TREND_REPO_ID = os.environ.get("HF_TREND_REPO_ID", "Tarun516/trend-classifier")
+HF_TREND_FILENAME = os.environ.get("HF_TREND_FILENAME", "trend_classifier.pkl")
+_raw_hf = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+HF_TOKEN = None
+if _raw_hf:
+    _t = _raw_hf.strip()
+    if _t:
+        HF_TOKEN = _t
 TREND_LOCAL_PATH = Path("/tmp/trend_classifier.pkl")
 
 
@@ -107,19 +111,26 @@ def ensure_models_loaded():
         regressor = joblib.load(model_path / "model.pkl")
         # Trend classifier is stored on Hugging Face; download once per instance
         if not TREND_LOCAL_PATH.exists():
-            print(f"Downloading trend_classifier from {HF_TREND_URL} ...")
-            headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
-            resp = requests.get(
-                HF_TREND_URL,
-                headers=headers,
-                stream=True,
-                timeout=HF_DOWNLOAD_TIMEOUT,
+            print(
+                f"Downloading {HF_TREND_FILENAME} from Hugging Face repo {HF_TREND_REPO_ID} ..."
             )
-            resp.raise_for_status()
-            with open(TREND_LOCAL_PATH, "wb") as f:
-                for chunk in resp.iter_content(8192):
-                    if chunk:
-                        f.write(chunk)
+            try:
+                cached = hf_hub_download(
+                    repo_id=HF_TREND_REPO_ID,
+                    filename=HF_TREND_FILENAME,
+                    token=HF_TOKEN,
+                )
+                shutil.copy2(cached, TREND_LOCAL_PATH)
+            except HfHubHTTPError as e:
+                if getattr(e, "response", None) is not None and e.response.status_code == 401:
+                    raise RuntimeError(
+                        "Hugging Face returned 401 Unauthorized. "
+                        "Set HF_TOKEN (or HUGGING_FACE_HUB_TOKEN) on this service with a valid "
+                        "token from https://huggingface.co/settings/tokens , then redeploy. "
+                        "If the repo is public, ensure the token has read access to your namespace. "
+                        "Using huggingface_hub (not raw HTTP) fixes many LFS/xet auth issues."
+                    ) from e
+                raise
         print("Loading trend_classifier from local cache...")
         classifier = joblib.load(TREND_LOCAL_PATH)
         _patch_monotonic(regressor)
