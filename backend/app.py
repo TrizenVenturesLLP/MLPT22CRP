@@ -12,16 +12,19 @@ from huggingface_hub.utils import HfHubHTTPError
 
 app = Flask(__name__)
 
-# Enable CORS for frontend (Vercel prod + preview) on /api/*
+# CORS: Vercel uses a different hostname per preview deploy. Set CORS_ORIGINS to a
+# comma-separated list to lock down, or "*" (default) to allow any origin on /api/*.
+_cors_raw = os.environ.get("CORS_ORIGINS", "*").strip()
+if _cors_raw == "*":
+    _cors_origins: str | list[str] = "*"
+else:
+    _cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+    if not _cors_origins:
+        _cors_origins = "*"
+
 CORS(
     app,
-    resources={
-        r"/api/*": {
-            "origins": [
-                "https://mlpt-22-crp.vercel.app",
-            ]
-        }
-    },
+    resources={r"/api/*": {"origins": _cors_origins}},
 )
 
 project_root = Path(__file__).parent.resolve()
