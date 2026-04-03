@@ -5,8 +5,12 @@ import numpy as np
 from flask import Flask, request, jsonify
 from pathlib import Path
 from sklearn.cluster import KMeans
+from flask_cors import CORS
 
 app = Flask(__name__)
+
+# Enable CORS for frontend (all origins for /api/*)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 project_root = Path(__file__).parent.resolve()
 
