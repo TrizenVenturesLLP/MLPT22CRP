@@ -2,7 +2,6 @@ import os
 import joblib
 import pandas as pd
 import numpy as np
-import requests
 from flask import Flask, request, jsonify
 from pathlib import Path
 from sklearn.cluster import KMeans
@@ -24,94 +23,88 @@ CORS(
 
 project_root = Path(__file__).parent.resolve()
 
-# Google Drive-backed trend classifier
-MODEL_LOCAL_PATH = Path("/tmp/trend_classifier.pkl")
-FILE_ID = "1TxV3u9WRF050C-STP8okDHksFg3RgENZ"
-_classifier = None
+regressor = None
+classifier = None
+state_enc = None
+district_enc = None
+crime_enc = None
+history_df_base = None
+full_df = None
+all_crime_types = []
+models_loaded = False
+models_error = None
+config_loaded = False
+config_error = None
 
 
-def download_from_drive(file_id: str, destination: Path) -> None:
-    url = "https://drive.google.com/uc?export=download"
-    session = requests.Session()
-
-    response = session.get(url, params={"id": file_id}, stream=True)
-
-    token = None
-    for key, value in response.cookies.items():
-        if key.startswith("download_warning"):
-            token = value
-            break
-
-    if token:
-        response = session.get(url, params={"id": file_id, "confirm": token}, stream=True)
-
-    with open(destination, "wb") as f:
-        for chunk in response.iter_content(8192):
-            if chunk:
-                f.write(chunk)
+def _patch_monotonic(model):
+    if hasattr(model, "estimators_"):
+        for est in model.estimators_:
+            if not hasattr(est, "tree_"):
+                continue
+            if not hasattr(est, "monotonic_cst"):
+                est.monotonic_cst = None
+    elif hasattr(model, "tree_"):
+        if not hasattr(model, "monotonic_cst"):
+            model.monotonic_cst = None
 
 
-def get_classifier():
-    global _classifier
+def load_config_data():
+    global state_enc, district_enc, crime_enc, full_df, history_df_base, all_crime_types
 
-    if _classifier is not None:
-        return _classifier
-
-    if not MODEL_LOCAL_PATH.exists():
-        print("Downloading trend_classifier from Google Drive...")
-        download_from_drive(FILE_ID, MODEL_LOCAL_PATH)
-
-    print("Loading trend_classifier from local cache...")
-    _classifier = joblib.load(MODEL_LOCAL_PATH)
-    return _classifier
-
-
-# Load models safely
-def load_models_data():
     model_path = project_root / "models"
-    regressor = joblib.load(model_path / "model.pkl")
-    
-    # Patch for monotonic_cst attribute missing in some sklearn versions
-    def patch_monotonic(model):
-        if hasattr(model, 'estimators_'):
-            for est in model.estimators_:
-                if not hasattr(est, 'tree_'): continue
-                if not hasattr(est, 'monotonic_cst'):
-                    est.monotonic_cst = None
-        elif hasattr(model, 'tree_'):
-            if not hasattr(model, 'monotonic_cst'):
-                model.monotonic_cst = None
-
-    patch_monotonic(regressor)
-
-    classifier = get_classifier()
-    patch_monotonic(classifier)
-
     state_enc = joblib.load(model_path / "state_encoder.pkl")
     district_enc = joblib.load(model_path / "district_encoder.pkl")
     crime_enc = joblib.load(model_path / "crime_encoder.pkl")
 
     csv_loc = project_root / "data" / "processed" / "crime_data_district_long.csv"
     df = pd.read_csv(csv_loc)
-    
-    # Remove TOTAL IPC CRIMES to match training data encoder
     df = df[df["Crime Description"] != "TOTAL IPC CRIMES"].copy()
-
-    # Ensuring Field is numeric
     df["Crime Count"] = pd.to_numeric(df["Crime Count"], errors="coerce").fillna(0)
 
-    history_df = df[df["Year"] <= 2012].copy()
-    history_df = history_df.sort_values(["State", "District", "Crime Description", "Year"])
-
-    return regressor, classifier, state_enc, district_enc, crime_enc, history_df, df
-
-try:
-    regressor, classifier, state_enc, district_enc, crime_enc, history_df_base, full_df = load_models_data()
+    full_df = df
+    history_df_base = df[df["Year"] <= 2012].copy().sort_values(
+        ["State", "District", "Crime Description", "Year"]
+    )
     all_crime_types = list(crime_enc.classes_)
     all_crime_types.insert(0, "All Crimes")
-except Exception as e:
-    print(f"Error loading models or data: {e}")
-    regressor = None
+
+
+def ensure_config_loaded():
+    global config_loaded, config_error
+    if config_loaded:
+        return True
+    try:
+        load_config_data()
+        config_loaded = True
+        config_error = None
+        return True
+    except Exception as e:
+        config_error = str(e)
+        print(f"Error loading config data: {e}")
+        return False
+
+
+def ensure_models_loaded():
+    global regressor, classifier, models_loaded, models_error
+    if models_loaded:
+        return True
+    if not ensure_config_loaded():
+        models_error = config_error
+        return False
+    try:
+        model_path = project_root / "models"
+        regressor = joblib.load(model_path / "model.pkl")
+        classifier = joblib.load(model_path / "trend_classifier.pkl")
+        _patch_monotonic(regressor)
+        _patch_monotonic(classifier)
+        models_loaded = True
+        models_error = None
+        return True
+    except Exception as e:
+        models_error = str(e)
+        print(f"Error loading prediction models: {e}")
+        return False
 
 
 def generate_localized_forecast(target_year, state, district, crime_type):
@@ -273,8 +266,8 @@ def index():
 
 @app.route("/api/config", methods=["GET"])
 def get_config():
-    if regressor is None:
-        return jsonify({"error": "Models failed to load"}), 500
+    if not ensure_config_loaded():
+        return jsonify({"error": f"Config failed to load: {config_error}"}), 500
 
     states = sorted(list(state_enc.classes_))
     # Map state to its districts based on our dataset
@@ -291,6 +284,9 @@ def get_config():
 
 @app.route("/api/predict", methods=["POST"])
 def predict():
+    if not ensure_models_loaded():
+        return jsonify({"error": f"Prediction models failed to load: {models_error}"}), 500
+
     data = request.json
     state = data.get("state")
     district = data.get("district")
@@ -330,6 +326,9 @@ def predict():
 
 @app.route("/api/hotspots", methods=["POST"])
 def get_hotspots():
+    if not ensure_models_loaded():
+        return jsonify({"error": f"Prediction models failed to load: {models_error}"}), 500
+
     data = request.json
     state = data.get("state")
     start_year = int(data.get("start_year", 2015))
