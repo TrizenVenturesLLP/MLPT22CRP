@@ -2,6 +2,7 @@ import os
 import joblib
 import pandas as pd
 import numpy as np
+import requests
 from flask import Flask, request, jsonify
 from pathlib import Path
 from sklearn.cluster import KMeans
@@ -23,10 +24,52 @@ CORS(
 
 project_root = Path(__file__).parent.resolve()
 
+# Google Drive-backed trend classifier
+MODEL_LOCAL_PATH = Path("/tmp/trend_classifier.pkl")
+FILE_ID = "1TxV3u9WRF050C-STP8okDHksFg3RgENZ"
+_classifier = None
+
+
+def download_from_drive(file_id: str, destination: Path) -> None:
+    url = "https://drive.google.com/uc?export=download"
+    session = requests.Session()
+
+    response = session.get(url, params={"id": file_id}, stream=True)
+
+    token = None
+    for key, value in response.cookies.items():
+        if key.startswith("download_warning"):
+            token = value
+            break
+
+    if token:
+        response = session.get(url, params={"id": file_id, "confirm": token}, stream=True)
+
+    with open(destination, "wb") as f:
+        for chunk in response.iter_content(8192):
+            if chunk:
+                f.write(chunk)
+
+
+def get_classifier():
+    global _classifier
+
+    if _classifier is not None:
+        return _classifier
+
+    if not MODEL_LOCAL_PATH.exists():
+        print("Downloading trend_classifier from Google Drive...")
+        download_from_drive(FILE_ID, MODEL_LOCAL_PATH)
+
+    print("Loading trend_classifier from local cache...")
+    _classifier = joblib.load(MODEL_LOCAL_PATH)
+    return _classifier
+
+
 # Load models safely
 def load_models_data():
     model_path = project_root / "models"
-    regressor = joblib.load(model_path / "model.pkl") 
+    regressor = joblib.load(model_path / "model.pkl")
     
     # Patch for monotonic_cst attribute missing in some sklearn versions
     def patch_monotonic(model):
@@ -40,8 +83,8 @@ def load_models_data():
                 model.monotonic_cst = None
 
     patch_monotonic(regressor)
-    
-    classifier = joblib.load(model_path / "trend_classifier.pkl")
+
+    classifier = get_classifier()
     patch_monotonic(classifier)
 
     state_enc = joblib.load(model_path / "state_encoder.pkl")
