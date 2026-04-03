@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { Flame, AlertTriangle, Shield, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+
 interface DistrictData {
   District: string;
   "Crime Count": number;
@@ -76,7 +78,7 @@ const HotspotDetection = ({ onResult }: HotspotDetectionProps) => {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const response = await fetch("/api/config");
+        const response = await fetch(`${API_BASE_URL}/api/config`);
         if (!response.ok) throw new Error("Failed to fetch configuration");
         const data = await response.json();
         setStates(data.states);
@@ -100,7 +102,7 @@ const HotspotDetection = ({ onResult }: HotspotDetectionProps) => {
     setResult(null);
     
     try {
-      const response = await fetch("/api/hotspots", {
+      const response = await fetch(`${API_BASE_URL}/api/hotspots`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

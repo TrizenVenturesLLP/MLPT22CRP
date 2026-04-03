@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { Brain, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+
 const SelectField = ({ label, value, onChange, options, placeholder, disabled }: {
   label: string; value: string; onChange: (v: string) => void; options: string[]; placeholder: string; disabled?: boolean;
 }) => (
@@ -42,7 +44,7 @@ const CrimePrediction = () => {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const response = await fetch("/api/config");
+        const response = await fetch(`${API_BASE_URL}/api/config`);
         if (!response.ok) throw new Error("Failed to fetch configuration");
         const data = await response.json();
         console.log("Prediction Config Loaded:", data);
@@ -73,7 +75,7 @@ const CrimePrediction = () => {
     setResult(null);
     
     try {
-      const response = await fetch("/api/predict", {
+      const response = await fetch(`${API_BASE_URL}/api/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
