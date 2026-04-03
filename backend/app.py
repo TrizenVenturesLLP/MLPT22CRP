@@ -2,6 +2,7 @@ import os
 import joblib
 import pandas as pd
 import numpy as np
+import requests
 from flask import Flask, request, jsonify
 from pathlib import Path
 from sklearn.cluster import KMeans
@@ -35,6 +36,15 @@ models_loaded = False
 models_error = None
 config_loaded = False
 config_error = None
+
+# Hugging Face-hosted trend classifier (file storage only)
+HF_TREND_URL = os.environ.get(
+    "HF_TREND_CLASSIFIER_URL",
+    "https://huggingface.co/Tarun516/trend-classifier/resolve/main/trend_classifier.pkl",
+)
+HF_TOKEN = os.environ.get("HF_TOKEN")
+HF_DOWNLOAD_TIMEOUT = int(os.environ.get("HF_DOWNLOAD_TIMEOUT", "300"))
+TREND_LOCAL_PATH = Path("/tmp/trend_classifier.pkl")
 
 
 def _patch_monotonic(model):
@@ -95,7 +105,23 @@ def ensure_models_loaded():
     try:
         model_path = project_root / "models"
         regressor = joblib.load(model_path / "model.pkl")
-        classifier = joblib.load(model_path / "trend_classifier.pkl")
+        # Trend classifier is stored on Hugging Face; download once per instance
+        if not TREND_LOCAL_PATH.exists():
+            print(f"Downloading trend_classifier from {HF_TREND_URL} ...")
+            headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
+            resp = requests.get(
+                HF_TREND_URL,
+                headers=headers,
+                stream=True,
+                timeout=HF_DOWNLOAD_TIMEOUT,
+            )
+            resp.raise_for_status()
+            with open(TREND_LOCAL_PATH, "wb") as f:
+                for chunk in resp.iter_content(8192):
+                    if chunk:
+                        f.write(chunk)
+        print("Loading trend_classifier from local cache...")
+        classifier = joblib.load(TREND_LOCAL_PATH)
         _patch_monotonic(regressor)
         _patch_monotonic(classifier)
         models_loaded = True
