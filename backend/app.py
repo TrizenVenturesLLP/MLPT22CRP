@@ -9,8 +9,17 @@ from flask_cors import CORS
 
 app = Flask(__name__)
 
-# Enable CORS for frontend (all origins for /api/*)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# Enable CORS for frontend (Vercel prod + preview) on /api/*
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": [
+                "https://mlpt-22-crp.vercel.app",
+            ]
+        }
+    },
+)
 
 project_root = Path(__file__).parent.resolve()
 
