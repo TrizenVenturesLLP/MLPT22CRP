@@ -1,6 +1,6 @@
 cd backend
 
-py -3.8 -m venv venv
+py -3.11 -m venv venv
 
 venv\Scripts\activate
 

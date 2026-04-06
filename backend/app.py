@@ -1,6 +1,9 @@
 import os
 import shutil
 import joblib
+from dotenv import load_dotenv
+
+load_dotenv()
 import pandas as pd
 import numpy as np
 from flask import Flask, request, jsonify
@@ -51,7 +54,7 @@ if _raw_hf:
     _t = _raw_hf.strip()
     if _t:
         HF_TOKEN = _t
-TREND_LOCAL_PATH = Path("/tmp/trend_classifier.pkl")
+TREND_LOCAL_PATH = project_root / "models" / "trend_classifier.pkl"
 
 
 def _patch_monotonic(model):
@@ -70,9 +73,9 @@ def load_config_data():
     global state_enc, district_enc, crime_enc, full_df, history_df_base, all_crime_types
 
     model_path = project_root / "models"
-    state_enc = joblib.load(model_path / "state_encoder.pkl")
-    district_enc = joblib.load(model_path / "district_encoder.pkl")
-    crime_enc = joblib.load(model_path / "crime_encoder.pkl")
+    state_enc = joblib.load(model_path / "state_encoder.pkl", mmap_mode='r')
+    district_enc = joblib.load(model_path / "district_encoder.pkl", mmap_mode='r')
+    crime_enc = joblib.load(model_path / "crime_encoder.pkl", mmap_mode='r')
 
     csv_loc = project_root / "data" / "processed" / "crime_data_district_long.csv"
     df = pd.read_csv(csv_loc)
@@ -111,7 +114,7 @@ def ensure_models_loaded():
         return False
     try:
         model_path = project_root / "models"
-        regressor = joblib.load(model_path / "model.pkl")
+        regressor = joblib.load(model_path / "model.pkl", mmap_mode='r')
         # Trend classifier is stored on Hugging Face; download once per instance
         if not TREND_LOCAL_PATH.exists():
             print(
@@ -135,7 +138,7 @@ def ensure_models_loaded():
                     ) from e
                 raise
         print("Loading trend_classifier from local cache...")
-        classifier = joblib.load(TREND_LOCAL_PATH)
+        classifier = joblib.load(TREND_LOCAL_PATH, mmap_mode='r')
         _patch_monotonic(regressor)
         _patch_monotonic(classifier)
         models_loaded = True

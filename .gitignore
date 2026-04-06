@@ -2,7 +2,7 @@
 backend/venv/
 backend/random/
 backend/__pycache__/
-
+backend/.env
 
 # Frontend ignores
 frontend/node_modules/
@@ -11,18 +11,24 @@ frontend/node_modules/
 /models/
 /data/raw/
 /data/processed/
-*.pkl
 *.xlsx
+
+# Specific ignores for models
+# We allow the smaller encoders but ignore the huge trend_classifier
+backend/models/trend_classifier.pkl
+# Optional: backend/models/model.pkl  # Keep if you want it on GitHub (71MB)
+
+# Encoders (Keep these on GitHub)
+!backend/models/city_encoder.pkl
+!backend/models/crime_encoder.pkl
+!backend/models/district_encoder.pkl
+!backend/models/state_encoder.pkl
 
 # Specific ignores for datasets (keeping backend/data)
 /data/
 !/backend/data/
 !/backend/data/**/*.csv
 !/backend/data/**/*.json
-
-# Models
-backend/models/trend_classifier.pkl
-!backend/models/*.pkl
 
 # JSON ignores
 json/india.json
